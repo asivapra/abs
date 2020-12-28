@@ -3,115 +3,101 @@
 import csv
 import json
 
-# def make_json(csvFilePath, jsonFilePath):
-#     """
-#     {
-#         "1": {
-#             "{\"Entities\": [{\"BeginOffset\": 0": "{\"Entities\": [{\"BeginOffset\": 0",
-#             " \"EndOffset\": 6": " \"EndOffset\": 6",
-#             " \"Score\": 0.9999970197767496": " \"Score\": 0.9999982118638471",
-#             " \"Text\": \"Palmer\"": " \"Text\": \"Palmer\"",
-#             " \"Type\": \"BRAND\"}]": " \"Type\": \"BRAND\"}]",
-#             " \"File\": \"avs4.csv\"": " \"File\": \"avs4.csv\"",
-#             " \"Line\": 157}": " \"Line\": 158}",
-#             "": "",
-#             "output": "output"
-#         }
-#     }
-#     """
-#     data = {}
-#     pos = {}
-#
-#     # Open a csv reader called DictReader
-#     with open(csvFilePath, encoding='utf-8') as csvf:
-#         csvReader = csv.DictReader(csvf)
-#
-#         # Convert each row into a dictionary
-#         # and add it to data
-#         # k = 0
-#         for rows in csvReader:
-#             # k += 1
-#             print(rows)
-#             # Assuming a column named 'No' to
-#             # be the primary key
-#             try:
-#                 # data[k] = rows
-#                 keys = list(rows.keys())
-#                 # print(keys)
-#                 b = keys[0].split()[2].replace('"', '')
-#                 e = keys[1].split()[1].replace('"', '')
-#                 brand = keys[3].split()[1].replace('"', '')
-#                 line = keys[6].split()[1].replace('"', '').replace('}', '')
-#                 score = keys[2].split()[1].replace('"', '')
-#                 pos[line] = [b, e, score, brand]
-#             except KeyError as e:
-#                 print(e)
-#         print(pos)
-#         # Open a json writer, and use the json.dumps()
-#     # function to dump data
-#     with open(jsonFilePath, 'w', encoding='utf-8') as jsonf:
-#         jsonf.write(json.dumps(data, indent=4))
-#
-#     # Driver Code
+
+def parse(cols):
+    # print("I:", cols)
+    b = int(cols[0].split(':')[2].replace('"', ''))
+    # print("H:", cols[1])
+    e = int(cols[1].split(':')[1].replace('"', ''))
+    # print("G:", cols[6])
+    # s = float(cols[2].split(':')[1].replace('"', ''))
+    # br = cols[3].split(':')[1].replace('"', '')
+    # f = cols[5].split(':')[1].replace('"', '')
+    f = cols[6].split(':')
+    # print("F:", f)
+    m = int(cols[6].split(':')[1].replace('}', '').replace('"', ''))
+    return b, e, m
 
 
-# def read_json(jsonFilePath):
-#     with open(jsonFilePath) as f:
-#         data = json.load(f)
-#     # print(data.keys())
-#     # print(data['1'])
-#     print(data['1'].keys())
-#     print(type(data['1']))
-#     # print(data['1'][0])
-#     print(data['1'])
-#     x = str(data['1'])
-#     print(x)
-#     y = json.loads(x)
-#     print(y["Entities"])
-#
-#     # print(data['1']['Entities'])
+def mask_brands(b, e, m, lines):
+    line = lines[m].rstrip()
+    line = line.replace('"', '')
+    chars = list(line)
+
+    for n in range(b + 1, e):
+        chars[n] = '*'
+    line = "".join(chars)
+    return line
 
 
 def read_csv(csvFilePath):
     print(f'Input file: {csvFilePath}')
+#col0	col1	col2	col3	col4	col5	col6	col7	col8	col9	col10	col11
+#{"Entities": [{"BeginOffset": 0	 "EndOffset": 6	 "Score": 0.9999930859092101	 "Text": "Palmer"	 "Type": "BRAND"}	 {"BeginOffset": 9	 "EndOffset": 16	 "Score": 0.9999995231630692	 "Text": "Natural"	 "Type": "BRAND"}]	 "File": "avs4.csv"	 "Line": 164}						output
+
     with open(csvFilePath, 'r') as f:
         csv_content = f.readlines()
         csv_content = csv_content[2:]
+        print(len(csv_content))
         cols = csv_content[0].split(',')
-        tfile = cols[5].split(':')[1].replace('"', '').replace(' ', '')
-    with open(tfile, 'r') as f:
+        for i in range(0, len(cols)):
+            v = cols[i]
+            # print(i)
+            if "File" in v:
+                tf = v.split(':')[1].replace('"', '').replace(' ', '')
+                print(tf)
+    with open(tf, 'r') as f:
         lines = f.readlines()
+    k = 0
     for i in csv_content:
+        k += 1
+        if k > 8:
+            break
+        # print(i)
+        cols2 = []
+        offsets = {}
         cols = i.split(',')
+        if "File" not in cols[5]:
+            cols2_0 = "\"Entities\"\": " + cols[5]
+            cols2.append(cols2_0)
+            # print(cols2_0)
+            for n in range(6, 12):
+                cols2.append(cols[n])
+            # break
+            cols[5] = cols[10]
+            cols[6] = cols[11]
+            # print("A. len cols2:", cols2)
         try:
-            b = int(cols[0].split(':')[2].replace('"', ''))
-            e = int(cols[1].split(':')[1].replace('"', ''))
-            # s = float(cols[2].split(':')[1].replace('"', ''))
-            # brand = cols[3].split(':')[1].replace('"', '')
-            # f = cols[5].split(':')[1].replace('"', '')
-            m = int(cols[6].split(':')[1].replace('}"', ''))
-            line = lines[m].rstrip()
-            line = line.replace('"', '')
+            b, e, m = parse(cols)
+            offsets[m] = [[b], [e]]
+            # line = mask_brands(b, e, m, lines)
+            # print(m, line, len(cols2))
+            # print("B. len cols2:", len(cols2))
+            if len(cols2):
+                b, e, m = parse(cols2)
+                offsets[m][0].append(b)
+                offsets[m][1].append(e)
+                # line = mask_brands(b, e, m, lines)
+                # print("from cols2:", m, line)
+            # print(offsets)
+            l_no = list(offsets.keys())[0]
+            # print(l_no)
+            line = lines[l_no].rstrip()
+            # print(line)
+            bs = offsets[l_no][0]
+            es = offsets[l_no][1]
             chars = list(line)
-
-            for n in range(b+1, e):
-                chars[n] = '*'
+            for n in range(0, len(bs)):
+                # print(bs[n], es[n])
+                for n in range(bs[n] + 1, es[n]):
+                    chars[n] = '*'
             line = "".join(chars)
-            print(m, line)
-        except (ValueError, IndexError):
+            print(l_no, line)
+        except (ValueError, IndexError) as e:
+            print(e)
             pass
 
 def main():
-    # csvFilePath = "avs6a.csv"
-# Function to convert a CSV to JSON
-# Takes the file paths as arguments
-# Decide the two file paths according to your
-# computer system
     csvFilePath = r'avs6a.csv'
-    # jsonFilePath = r'Names.json'
-
-    # Call the make_json function
-    # make_json(csvFilePath, jsonFilePath)
-    # read_json(jsonFilePath)
     read_csv(csvFilePath)
 main()
