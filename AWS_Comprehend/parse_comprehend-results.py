@@ -1,49 +1,51 @@
 #!/usr/bin/env python
+"""
+parse_comprehend-results.py
+    This program parses the results from "AWS Comprehend Custom Entities Recognition" and masks the
+    entities in the original source document.
+
+Author: Dr. Arapaut V. Sivaprasad
+Created on: 28-12-2020
+Last Modified on: 28-12-2020
+Copyright (c) 2020 by Arapaut V. Sivaprasad, Australian Bureau of Statistics and WebGenie Software Pty Ltd.
+"""
 
 import csv
 import json
 
 
-# def parse(cols):
-#     b = int(cols[0].split(':')[2].replace('"', ''))
-#     e = int(cols[1].split(':')[1].replace('"', ''))
-#     # s = float(cols[2].split(':')[1].replace('"', ''))
-#     # br = cols[3].split(':')[1].replace('"', '')
-#     # f = cols[5].split(':')[1].replace('"', '')
-#     f = cols[6].split(':')
-#     m = int(cols[6].split(':')[1].replace('}', '').replace('"', ''))
-#     return b, e, m
-
-
-# def mask_brands(b, e, m, lines):
-#     line = lines[m].rstrip()
-#     line = line.replace('"', '')
-#     chars = list(line)
-#
-#     for n in range(b + 1, e):
-#         chars[n] = '*'
-#     line = "".join(chars)
-#     return line
-
-
 def mask_entities(offsets, doc_lines):
-    l_no = list(offsets.keys())[0]
-    # print(l_no)
-    line = doc_lines[l_no].rstrip().replace('"', '')
-    # print(line)
-    bs = offsets[l_no][0]
-    es = offsets[l_no][1]
+    """
+    Mask the entities in the original source document and write out.
+    :param offsets: The Begin/End positions for the entities. Received as a dict with the line number as the key.
+    :param doc_lines: The full content of the original document as a list.
+    :return: line = The entities masked out line.
+    """
+    line_no = list(offsets.keys())[0]
+    line = doc_lines[line_no].rstrip().replace('"', '')
+    bs = offsets[line_no][0]
+    es = offsets[line_no][1]
     chars = list(line)
-    for n in range(0, len(bs)):
-        # print(bs[n], es[n])
-        for n in range(bs[n] + 1, es[n]):
+    for m in range(0, len(bs)):
+        for n in range(bs[m] + 1, es[m]):
             chars[n] = '*'
     line = "".join(chars)
-    print(l_no, line)
+    # print(line_no, line)  # For debugging. Do NOT delete
     return line
 
 
 def get_offsets(n_match, cols):
+    """
+    Get the offsets of entities in the source document lines. This info is retrieved from AWS output data.
+
+    :param n_match: Number of entities in a line
+    :param cols: The results line split as columns
+    :return: offsets == a dict of offsets using the line number as keys. The values are arrays of
+    Begin/End offsets. There can be up to 3 values for these.
+        e.g.    {157 : [[0], [6]]}
+                {157 : [[0, 10], [6, 15]]}
+                {157 : [[0, 10, 17], [6, 15, 23]]}
+    """
     offsets = {}
     if n_match == 1:
         b = int(cols[0].split(':')[2].replace('"', ''))  # BeginOffset
@@ -73,15 +75,24 @@ def get_offsets(n_match, cols):
 
 
 def parse_cer_result(cer_content, doc_lines, masked_doc_file):
-    k = 0
+    """
+    1. Parse the AWS output data to get the Begin/End offsets and line number for the entities.
+    2. Mask the entities in the original doc_lines and write out in a file.
+    :param cer_content: The AWS output data. See read_cer(cer_file) for details
+    :param doc_lines: The full content of the original document as a list.
+    :param masked_doc_file: Output filename to write the masked lines.
+    :return: k == The number of lines actually parsed, excluding the lines skipped due the absence of line number
+    """
+    print(f"Output file: {masked_doc_file}")
+    k = 0   # Number of lines masked
+    j = 0  # Number of lines excluded
     with open(masked_doc_file, "a") as mf:
         for i in cer_content:
             k += 1
-            # if k < 5700:
+            # if k < 5700:  # For debugging. Do NOT delete
             #     continue
             cols = i.split(',')
             if not cols[3]:  # Discard empty rows, if any
-                # print("A. Here:", i)
                 continue
             # How many matches?
             if "Line" in cols[6]:
@@ -92,22 +103,34 @@ def parse_cer_result(cer_content, doc_lines, masked_doc_file):
                 n_match = 3
             else:
                 n_match = 0  # This row has no line number
-                # print("B. Here:", i)
-                # return ""
+                k -= 1
+                j += 1
             if n_match:
                 offsets = get_offsets(n_match, cols)
                 line = mask_entities(offsets, doc_lines) + "\n"
                 mf.writelines(line)
-    return k
+    return k, j
 
 
 def read_infile(doc_file):
+    """
+    Read teh file contents from the source document. e.g. 'avs4.csv'.
+    :param doc_file: The filename returned by get_infilename(cer_content)
+    :return: lines == doc_lines. The full content as a list.
+    """
     with open(doc_file, 'r') as f:
         lines = f.readlines()
     return lines
 
 
 def get_infilename(cer_content):
+    """
+    Get the filename of the source document. e.g. 'avs4.csv'. This filename is included
+    in the AWS output data. It is taken from the second last non-empty column in 'cer_content'
+
+    :param cer_content: The AWS output data. See read_cer(cer_file) for details
+    :return: tf == the document file name.
+    """
     cols = cer_content[0].split(',')
     for i in range(0, len(cols)):
         v = cols[i]
@@ -117,79 +140,36 @@ def get_infilename(cer_content):
 
 
 def read_cer(cer_file):
+    """
+    Read the content of the output from the AWS Comprehend analysis
+    :param cer_file: The data input file. Contents as below.
+        - The 'avs6a.csv' is the output from the AWS Comprehend analysis.
+
+        Sample lines:
+        1-Entity:
+        {"Entities": [{"BeginOffset": 0,	 "EndOffset": 6,	 "Score": 0.9999970197767496,
+        "Text": "Palmer",	 "Type": "BRAND"}],	 "File": "avs4.csv",	 "Line": 157}
+
+        2-Entitites:
+        {"Entities": [{"BeginOffset": 0,	 "EndOffset": 6,	 "Score": 0.9999930859092101,
+        "Text": "Palmer",	 "Type": "BRAND"},	 {"BeginOffset": 9,	 "EndOffset": 16,
+        "Score": 0.9999995231630692,	 "Text": "Natural",	 "Type": "BRAND"}],	 "File": "avs4.csv",
+        "Line": 164}
+
+        3-Entitites:
+        {"Entities": [{"BeginOffset": 0,	 "EndOffset": 7,	 "Score": 0.9999976158197796,
+        "Text": "Johnson",	 "Type": "BRAND"},	 {"BeginOffset": 10,	 "EndOffset": 14,
+        "Score": 0.9999986886995842,	 "Text": "Head",	 "Type": "BRAND"},	 {"BeginOffset": 22,
+        "EndOffset": 26,	 "Score": 0.9999995231630692,	 "Text": "Baby",	 "Type": "BRAND"}],
+        "File": "avs4.csv"	 "Line": 5702}
+
+    :return: cer_content
+    """
     print(f'Input file: {cer_file}')
     with open(cer_file, 'r') as f:
         cer_content = f.readlines()  # This is the CSV file saved from the Custom Entities Recognition
         cer_content = cer_content[2:]
     return cer_content
-
-
-# def read_csv(cer_file):
-#     print(f'Input file: {cer_file}')
-# #col0	col1	col2	col3	col4	col5	col6	col7	col8	col9	col10	col11
-# #{"Entities": [{"BeginOffset": 0	 "EndOffset": 6	 "Score": 0.9999930859092101	 "Text": "Palmer"	 "Type": "BRAND"}	 {"BeginOffset": 9	 "EndOffset": 16	 "Score": 0.9999995231630692	 "Text": "Natural"	 "Type": "BRAND"}]	 "File": "avs4.csv"	 "Line": 164}						output
-#
-#     with open(cer_file, 'r') as f:
-#         cer_result = f.readlines()  # This is the CSV file saved from the Custom Entities Recognition
-#         cer_result = cer_result[2:]
-#         print(len(cer_result))
-#         cols = cer_result[0].split(',')
-#         for i in range(0, len(cols)):
-#             v = cols[i]
-#             # print(i)
-#             if "File" in v:
-#                 tf = v.split(':')[1].replace('"', '').replace(' ', '')
-#                 print(tf)
-#     with open(tf, 'r') as f:
-#         lines = f.readlines()
-#     k = 0
-#     for i in cer_result:
-#         k += 1
-#         if k > 8:
-#             break
-#         # print(i)
-#         cols2 = []
-#         offsets = {}
-#         cols = i.split(',')
-#         if "File" not in cols[5]:
-#             cols2_0 = "\"Entities\"\": " + cols[5]
-#             cols2.append(cols2_0)
-#             # print(cols2_0)
-#             for n in range(6, 12):
-#                 cols2.append(cols[n])
-#             # break
-#             cols[5] = cols[10]
-#             cols[6] = cols[11]
-#             # print("A. len cols2:", cols2)
-#         try:
-#             b, e, m = parse(cols)
-#             offsets[m] = [[b], [e]]
-#             # line = mask_brands(b, e, m, lines)
-#             # print(m, line, len(cols2))
-#             # print("B. len cols2:", len(cols2))
-#             if len(cols2):
-#                 b, e, m = parse(cols2)
-#                 offsets[m][0].append(b)
-#                 offsets[m][1].append(e)
-#                 # line = mask_brands(b, e, m, lines)
-#                 # print("from cols2:", m, line)
-#             # print(offsets)
-#             l_no = list(offsets.keys())[0]
-#             # print(l_no)
-#             line = lines[l_no].rstrip()
-#             # print(line)
-#             bs = offsets[l_no][0]
-#             es = offsets[l_no][1]
-#             chars = list(line)
-#             for n in range(0, len(bs)):
-#                 # print(bs[n], es[n])
-#                 for n in range(bs[n] + 1, es[n]):
-#                     chars[n] = '*'
-#             line = "".join(chars)
-#             print(l_no, line)
-#         except (ValueError, IndexError) as e:
-#             print(e)
-#             pass
 
 
 def main():
@@ -224,8 +204,9 @@ def main():
     masked_doc_file = doc_file
     masked_doc_file = masked_doc_file.replace(".csv", "_masked.csv")
     doc_lines = read_infile(doc_file)
-    k = parse_cer_result(cer_content, doc_lines, masked_doc_file)
-    print(f"Processed {k} lines")
+    k, j = parse_cer_result(cer_content, doc_lines, masked_doc_file)
+    print(f"Processed: {k} lines with entities masked. Excluding {j} incomplete lines.")
 
 
-main()
+if __name__ == '__main__':
+    main()
