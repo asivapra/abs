@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """
 parse_comprehend-results.py
+GitHub: https://github.com/asivapra/abs/blob/main/AWS_Comprehend/parse_comprehend-results.py
     This program parses the results from "AWS Comprehend Custom Entities Recognition" and masks the
     entities in the original source document.
 
