@@ -11,9 +11,8 @@ Last Modified on: 28-12-2020
 Copyright (c) 2020 by Arapaut V. Sivaprasad, Australian Bureau of Statistics and WebGenie Software Pty Ltd.
 """
 
-import csv
+import re
 import json
-
 
 def mask_entities(offsets, doc_lines):
     """
@@ -124,38 +123,33 @@ def parse_cer_result(cer_content, doc_lines, masked_doc_file):
     :return: k == The number of lines actually parsed, excluding the lines skipped due the absence of line number
     """
     print(f"Output file: {masked_doc_file}")
-    k = 0   # Number of lines masked
-    j = 0  # Number of lines excluded
-    with open(masked_doc_file, "a") as mf:
+    k = 0   # Number of lines where the entities are masked
+    j = 0   # Number of lines skipped. These include those without an entity and those with > 3 entities.
+    with open(masked_doc_file, "w") as mf:
+        line = "Titles with Masked Entities\n"
+        mf.writelines(line)
         for i in cer_content:
-            # k += 1
-            # if k < 5700:  # For debugging. Do NOT delete
-            #     continue
-            cols = i.split(',')
-            if not cols[3]:  # Discard empty rows, if any
-                # print(cols[2])
-                j += 1
-                continue
-            offsets, n_match, n_excluded = get_offsets(cols)
-
-            # # How many matches?
-            # if "Line" in cols[6]:
-            #     n_match = 1
-            # elif "Line" in cols[11]:
-            #     n_match = 2
-            # elif "Line" in cols[16]:
-            #     n_match = 3
-            # else:
-            #     n_match = 0  # This row has no line number
-            #     k -= 1
-            #     j += 1
-            if n_match:
-                k += 1
-                # offsets = get_offsets(cols)
+            offsets = {}
+            ba = []
+            ea = []
+            ij = i.replace('""', '"').replace('","', ',')
+            ij = re.sub(r'",*output', '', ij).replace('"{"', '{"')
+            try:
+                dd = json.loads(ij)
+                r = dd['Line']
+                le = len(dd['Entities'])
+                if not le:  # There is no entity in the line.
+                    j += 1
+                for n in range(0, le):
+                    ba.append(dd['Entities'][n]['BeginOffset'])
+                    ea.append(dd['Entities'][n]['EndOffset'])
+                offsets[r] = [ba, ea]
                 line = mask_entities(offsets, doc_lines) + "\n"
                 mf.writelines(line)
-            else:
+                k += 1
+            except Exception as e:
                 j += 1
+                # print(">>> ERROR:", e)
     return k, j
 
 
