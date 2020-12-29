@@ -23,6 +23,7 @@ def mask_entities(offsets, doc_lines):
     :return: line = The entities masked out line.
     """
     line_no = list(offsets.keys())[0]
+    # print(line_no)
     line = doc_lines[line_no].rstrip().replace('"', '')
     bs = offsets[line_no][0]
     es = offsets[line_no][1]
@@ -35,7 +36,45 @@ def mask_entities(offsets, doc_lines):
     return line
 
 
-def get_offsets(n_match, cols):
+def get_offsets(cols):
+# {"Entities": [{"BeginOffset": 0,	 "EndOffset": 6,	 "Score": 0.9999930859092101,	 "Text": "Palmer",	 "Type": "BRAND"},	 {"BeginOffset": 9,	 "EndOffset": 16,	 "Score": 0.9999995231630692,
+# "Text": "Natural",	 "Type": "BRAND"}],	 "File": "avs4.csv",	 "Line": 164}
+
+    offsets = {}
+    ba = []
+    ea = []
+    r = 0
+    n_match = 0
+    n_excluded = 0
+    # Get the line number
+    for i in cols:
+        if "Line" in i:
+            r = int(i.split(':')[1].replace('}', '').replace('"', '').strip())
+            break
+    if r:
+        for j in range(0, len(cols)):
+            if "BeginOffset" in cols[j]:
+                if j == 0:
+                    b = int(cols[j].split(':')[2].replace('"', ''))  # BeginOffset
+                else:
+                    b = int(cols[j].split(':')[1].replace('"', ''))  # BeginOffset
+                ba.append(b)
+                n_match += 1
+
+            if "EndOffset" in cols[j]:
+                e = int(cols[j].split(':')[1].replace('"', ''))  # EndOffset
+                ea.append(e)
+    else:
+        n_excluded = 1
+
+    offsets[r] = [ba, ea]
+    if not n_match:
+        pass
+        # print(offsets, n_match, n_excluded)
+    return offsets, n_match, n_excluded
+
+
+def get_offsets_0(n_match, cols):
     """
     Get the offsets of entities in the source document lines. This info is retrieved from AWS output data.
 
@@ -76,6 +115,51 @@ def get_offsets(n_match, cols):
 
 
 def parse_cer_result(cer_content, doc_lines, masked_doc_file):
+    """
+    1. Parse the AWS output data to get the Begin/End offsets and line number for the entities.
+    2. Mask the entities in the original doc_lines and write out in a file.
+    :param cer_content: The AWS output data. See read_cer(cer_file) for details
+    :param doc_lines: The full content of the original document as a list.
+    :param masked_doc_file: Output filename to write the masked lines.
+    :return: k == The number of lines actually parsed, excluding the lines skipped due the absence of line number
+    """
+    print(f"Output file: {masked_doc_file}")
+    k = 0   # Number of lines masked
+    j = 0  # Number of lines excluded
+    with open(masked_doc_file, "a") as mf:
+        for i in cer_content:
+            # k += 1
+            # if k < 5700:  # For debugging. Do NOT delete
+            #     continue
+            cols = i.split(',')
+            if not cols[3]:  # Discard empty rows, if any
+                # print(cols[2])
+                j += 1
+                continue
+            offsets, n_match, n_excluded = get_offsets(cols)
+
+            # # How many matches?
+            # if "Line" in cols[6]:
+            #     n_match = 1
+            # elif "Line" in cols[11]:
+            #     n_match = 2
+            # elif "Line" in cols[16]:
+            #     n_match = 3
+            # else:
+            #     n_match = 0  # This row has no line number
+            #     k -= 1
+            #     j += 1
+            if n_match:
+                k += 1
+                # offsets = get_offsets(cols)
+                line = mask_entities(offsets, doc_lines) + "\n"
+                mf.writelines(line)
+            else:
+                j += 1
+    return k, j
+
+
+def parse_cer_result_0(cer_content, doc_lines, masked_doc_file):
     """
     1. Parse the AWS output data to get the Begin/End offsets and line number for the entities.
     2. Mask the entities in the original doc_lines and write out in a file.
