@@ -7,12 +7,15 @@ GitHub: https://github.com/asivapra/abs/blob/main/AWS_Comprehend/parse_comprehen
 
 Author: Dr. Arapaut V. Sivaprasad
 Created on: 28-12-2020
-Last Modified on: 28-12-2020
+Last Modified on: 29-12-2020
 Copyright (c) 2020 by Arapaut V. Sivaprasad, Australian Bureau of Statistics and WebGenie Software Pty Ltd.
 """
 
 import re
 import json
+
+cer_file = r'avs6a.csv'  # This is the CSV file saved from the AWS Custom Entities Recognition
+
 
 def mask_entities(offsets, doc_lines):
     """
@@ -129,17 +132,37 @@ def read_infile(doc_file):
 def get_infilename(cer_content):
     """
     Get the filename of the source document. e.g. 'avs4.csv'. This filename is included
-    in the AWS output data. It is taken from the second last non-empty column in 'cer_content'
+    in the AWS output data and is on every line except incomplete and more than 3 entities lines.
 
     :param cer_content: The AWS output data. See read_cer(cer_file) for details
-    :return: tf == the document file name.
+    :return: doc_file, masked_doc_file == the document file name and the output file to write the masked lines.
     """
-    cols = cer_content[0].split(',')
-    for i in range(0, len(cols)):
-        v = cols[i]
-        if "File" in v:
-            tf = v.split(':')[1].replace('"', '').replace(' ', '')
-            return tf
+    for i in (0, len(cer_content)):
+        ir = cer_content[i].replace('""', '"').replace('","', ',')
+        ir = re.sub(r'",*output', '', ir).replace('"{"', '{"')
+        try:
+            dict_ir = json.loads(ir)  # 'dict_ir' is a dict object of the string, 'ir'
+            doc_file = dict_ir['File']
+            masked_doc_file = doc_file.replace(".csv", "_masked.csv")
+            return doc_file, masked_doc_file
+        except json.decoder.JSONDecodeError as e:
+            print(f">>> ERROR: {e}. Skipping the line.")
+
+
+# def get_infilename_0(cer_content):
+#     """
+#     Get the filename of the source document. e.g. 'avs4.csv'. This filename is included
+#     in the AWS output data. It is taken from the second last non-empty column in 'cer_content'
+#
+#     :param cer_content: The AWS output data. See read_cer(cer_file) for details
+#     :return: tf == the document file name.
+#     """
+#     cols = cer_content[0].split(',')
+#     for i in range(0, len(cols)):
+#         v = cols[i]
+#         if "File" in v:
+#             tf = v.split(':')[1].replace('"', '').replace(' ', '')
+#             return tf
 
 
 def read_cer(cer_file):
@@ -201,11 +224,11 @@ def main():
 
     :return:
     """
-    cer_file = r'avs6a.csv'  # This is the CSV file saved from the Custom Entities Recognition
+    # cer_file = r'avs6a.csv'  # This is the CSV file saved from the Custom Entities Recognition
     cer_content = read_cer(cer_file)  # This is the cer_file content
-    doc_file = get_infilename(cer_content)  # This is the file containing the document lines to scan
-    masked_doc_file = doc_file
-    masked_doc_file = masked_doc_file.replace(".csv", "_masked.csv")
+    doc_file, masked_doc_file = get_infilename(cer_content)  # This is the file containing the document lines to scan
+    # masked_doc_file = doc_file
+    # masked_doc_file = masked_doc_file.replace(".csv", "_masked.csv")
     doc_lines = read_infile(doc_file)
     k, j = parse_cer_result(cer_content, doc_lines, masked_doc_file)
     print(f"Processed: {k} lines with entities masked. Excluding {j} incomplete lines.")
