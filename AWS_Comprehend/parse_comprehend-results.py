@@ -65,7 +65,7 @@ def parse_cer_result(cer_content, doc_lines, masked_doc_file):
 
     3. Using the b, e and r, mask the entities in the original doc_lines and write out in a file.
 
-    :param cer_content: The AWS output data. See read_cer(cer_file) for details
+    :param cer_content: The AWS output data. See read_cer_file(cer_file) for details
     :param doc_lines: The full content of the original document as a list.
     :param masked_doc_file: Output filename to write the masked lines.
     :return: k, j == The numbers of lines actually parsed and the excluded lines
@@ -118,10 +118,10 @@ def parse_cer_result(cer_content, doc_lines, masked_doc_file):
     return k, j
 
 
-def read_infile(doc_file):
+def read_doc_file(doc_file):
     """
-    Read teh file contents from the source document. e.g. 'avs4.csv'.
-    :param doc_file: The filename returned by get_infilename(cer_content)
+    Read the file contents from the source document. e.g. 'avs4.csv'.
+    :param doc_file: The filename returned by get_doc_file_names(cer_content)
     :return: lines == doc_lines. The full content as a list.
     """
     with open(doc_file, 'r') as f:
@@ -129,12 +129,12 @@ def read_infile(doc_file):
     return lines
 
 
-def get_infilename(cer_content):
+def get_doc_file_names(cer_content):
     """
     Get the filename of the source document. e.g. 'avs4.csv'. This filename is included
     in the AWS output data and is on every line except incomplete and more than 3 entities lines.
 
-    :param cer_content: The AWS output data. See read_cer(cer_file) for details
+    :param cer_content: The AWS output data. See read_cer_file(cer_file) for details
     :return: doc_file, masked_doc_file == the document file name and the output file to write the masked lines.
     """
     for i in (0, len(cer_content)):
@@ -149,23 +149,7 @@ def get_infilename(cer_content):
             print(f">>> ERROR: {e}. Skipping the line.")
 
 
-# def get_infilename_0(cer_content):
-#     """
-#     Get the filename of the source document. e.g. 'avs4.csv'. This filename is included
-#     in the AWS output data. It is taken from the second last non-empty column in 'cer_content'
-#
-#     :param cer_content: The AWS output data. See read_cer(cer_file) for details
-#     :return: tf == the document file name.
-#     """
-#     cols = cer_content[0].split(',')
-#     for i in range(0, len(cols)):
-#         v = cols[i]
-#         if "File" in v:
-#             tf = v.split(':')[1].replace('"', '').replace(' ', '')
-#             return tf
-
-
-def read_cer(cer_file):
+def read_cer_file():
     """
     Read the content of the output from the AWS Comprehend analysis
     :param cer_file: The data input file. Contents as below.
@@ -224,12 +208,9 @@ def main():
 
     :return:
     """
-    # cer_file = r'avs6a.csv'  # This is the CSV file saved from the Custom Entities Recognition
-    cer_content = read_cer(cer_file)  # This is the cer_file content
-    doc_file, masked_doc_file = get_infilename(cer_content)  # This is the file containing the document lines to scan
-    # masked_doc_file = doc_file
-    # masked_doc_file = masked_doc_file.replace(".csv", "_masked.csv")
-    doc_lines = read_infile(doc_file)
+    cer_content = read_cer_file()  # This is the cer_file content (cer = Custom Entity Recognition)
+    doc_file, masked_doc_file = get_doc_file_names(cer_content)  # This is the file containing the document lines to scan
+    doc_lines = read_doc_file(doc_file)
     k, j = parse_cer_result(cer_content, doc_lines, masked_doc_file)
     print(f"Processed: {k} lines with entities masked. Excluding {j} incomplete lines.")
 
