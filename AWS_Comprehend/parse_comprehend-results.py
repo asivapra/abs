@@ -327,7 +327,7 @@ def star_entities(b, e, keys, nlp, wr):
             mf.writelines(line)
 
     with open(doc_file_masked, "a") as mf:
-        e = b + 10  # Debugging. DO NOT DELETE. To limit the # of lines.
+        # e = b + 10  # Debugging. DO NOT DELETE. To limit the # of lines.
         print(f"Worker {wr}: Processing lines {b} to {e}.")
         keys = keys[b:e]
         n = b
