@@ -1,113 +1,204 @@
 #!/usr/bin/env python
+#!/usr/bin/env python
+# coding: utf8
+"""Example of training spaCy's named entity recognizer, starting off with an
+existing model or a blank model.
 
-import csv
-import json
+For more details, see the documentation:
+* Training: https://spacy.io/usage/training
+* NER: https://spacy.io/usage/linguistic-features#named-entities
 
-# def make_json(csvFilePath, jsonFilePath):
-#     """
-#     {
-#         "1": {
-#             "{\"Entities\": [{\"BeginOffset\": 0": "{\"Entities\": [{\"BeginOffset\": 0",
-#             " \"EndOffset\": 6": " \"EndOffset\": 6",
-#             " \"Score\": 0.9999970197767496": " \"Score\": 0.9999982118638471",
-#             " \"Text\": \"Palmer\"": " \"Text\": \"Palmer\"",
-#             " \"Type\": \"BRAND\"}]": " \"Type\": \"BRAND\"}]",
-#             " \"File\": \"avs4.csv\"": " \"File\": \"avs4.csv\"",
-#             " \"Line\": 157}": " \"Line\": 158}",
-#             "": "",
-#             "output": "output"
-#         }
-#     }
-#     """
-#     data = {}
-#     pos = {}
-#
-#     # Open a csv reader called DictReader
-#     with open(csvFilePath, encoding='utf-8') as csvf:
-#         csvReader = csv.DictReader(csvf)
-#
-#         # Convert each row into a dictionary
-#         # and add it to data
-#         # k = 0
-#         for rows in csvReader:
-#             # k += 1
-#             print(rows)
-#             # Assuming a column named 'No' to
-#             # be the primary key
-#             try:
-#                 # data[k] = rows
-#                 keys = list(rows.keys())
-#                 # print(keys)
-#                 b = keys[0].split()[2].replace('"', '')
-#                 e = keys[1].split()[1].replace('"', '')
-#                 brand = keys[3].split()[1].replace('"', '')
-#                 line = keys[6].split()[1].replace('"', '').replace('}', '')
-#                 score = keys[2].split()[1].replace('"', '')
-#                 pos[line] = [b, e, score, brand]
-#             except KeyError as e:
-#                 print(e)
-#         print(pos)
-#         # Open a json writer, and use the json.dumps()
-#     # function to dump data
-#     with open(jsonFilePath, 'w', encoding='utf-8') as jsonf:
-#         jsonf.write(json.dumps(data, indent=4))
-#
-#     # Driver Code
+Compatible with: spaCy v2.0.0+
+Last tested with: v2.2.4
+"""
+from __future__ import unicode_literals, print_function
+
+import plac
+import re
+import random
+import warnings
+from pathlib import Path
+import spacy
+from spacy.util import minibatch, compounding
+from spellchecker import SpellChecker
+spell = SpellChecker()
+spell.word_frequency.load_text_file('./brand_names.txt')
+
+# training data
+TRAIN_DATA = [
+    ("Leukopor Hypoallergenic Paper Tape Snap Spool", {"entities": [(0, 8, "BRAND"), (9, 23, "BRAND")]}),
+    ("Who is Shaka Khan?", {"entities": [(7, 12, "PERSON")]}),
+    ("I like London and Berlin.", {"entities": [(7, 13, "LOC"), (18, 24, "LOC")]}),
+]
 
 
-# def read_json(jsonFilePath):
-#     with open(jsonFilePath) as f:
-#         data = json.load(f)
-#     # print(data.keys())
-#     # print(data['1'])
-#     print(data['1'].keys())
-#     print(type(data['1']))
-#     # print(data['1'][0])
-#     print(data['1'])
-#     x = str(data['1'])
-#     print(x)
-#     y = json.loads(x)
-#     print(y["Entities"])
-#
-#     # print(data['1']['Entities'])
+@plac.annotations(
+    model=("Model name. Defaults to blank 'en' model.", "option", "m", str),
+    output_dir=("Optional output directory", "option", "o", Path),
+    n_iter=("Number of training iterations", "option", "n", int),
+)
+
+def train_spacy(model=None, output_dir=None, n_iter=100):
+    """Load the model, set up the pipeline and train the entity recognizer."""
+    if model is not None:
+        nlp = spacy.load(model)  # load existing spaCy model
+        print("Loaded model '%s'" % model)
+    else:
+        nlp = spacy.blank("en")  # create blank Language class
+        # nlp = spacy.load("en")  # create blank Language class
+        print("Created blank 'en' model")
+
+    # create the built-in pipeline components and add them to the pipeline
+    # nlp.create_pipe works for built-ins that are registered with spaCy
+    if "ner" not in nlp.pipe_names:
+        ner = nlp.create_pipe("ner")
+        nlp.add_pipe(ner, last=True)
+    # otherwise, get it so we can add labels
+    else:
+        ner = nlp.get_pipe("ner")
+
+    # add labels
+    for _, annotations in TRAIN_DATA:
+        for ent in annotations.get("entities"):
+            ner.add_label(ent[2])
+
+    # get names of other pipes to disable them during training
+    pipe_exceptions = ["ner", "trf_wordpiecer", "trf_tok2vec"]
+    other_pipes = [pipe for pipe in nlp.pipe_names if pipe not in pipe_exceptions]
+    # only train NER
+    with nlp.disable_pipes(*other_pipes), warnings.catch_warnings():
+        # show warnings for misaligned entity spans once
+        warnings.filterwarnings("once", category=UserWarning, module='spacy')
+
+        # reset and initialize the weights randomly – but only if we're
+        # training a new model
+        if model is None:
+            nlp.begin_training()
+        for itn in range(n_iter):
+            # random.shuffle(TRAIN_DATA)
+            losses = {}
+            # batch up the examples using spaCy's minibatch
+            batches = minibatch(TRAIN_DATA, size=compounding(4.0, 32.0, 1.001))
+            for batch in batches:
+                texts, annotations = zip(*batch)
+                nlp.update(
+                    texts,  # batch of texts
+                    annotations,  # batch of annotations
+                    drop=0.5,  # dropout - make it harder to memorise data
+                    losses=losses,
+                )
+            # print("Losses", losses)
+    return nlp
 
 
-def read_csv(csvFilePath):
-    with open(csvFilePath, 'r') as f:
-        csv_content = f.readlines()
-        csv_content = csv_content[2:]
-        cols = csv_content[0].split(',')
-        tfile = cols[5].split(':')[1].replace('"', '').replace(' ', '')
-    with open(tfile, 'r') as f:
-        lines = f.readlines()
-    for i in csv_content:
-        cols = i.split(',')
-        b = int(cols[0].split(':')[2].replace('"', ''))
-        e = int(cols[1].split(':')[1].replace('"', ''))
-        s = float(cols[2].split(':')[1].replace('"', ''))
-        t = cols[3].split(':')[1].replace('"', '')
-        f = cols[5].split(':')[1].replace('"', '')
-        l = int(cols[6].split(':')[1].replace('}"', ''))
-        print(b, e, s, t, f, l)
-        line = list(lines[l])
-        for n in range(b, len(line)):
-            if line[n] == ' ':
-                break
-            line[n] = '*'
-        line = "".join(line)
-        print(line)
+def main(model=None, output_dir=None, n_iter=100):
+    # """Load the model, set up the pipeline and train the entity recognizer."""
+    # if model is not None:
+    #     nlp = spacy.load(model)  # load existing spaCy model
+    #     print("Loaded model '%s'" % model)
+    # else:
+    #     nlp = spacy.blank("en")  # create blank Language class
+    #     # nlp = spacy.load("en")  # create blank Language class
+    #     print("Created blank 'en' model")
+    #
+    # # create the built-in pipeline components and add them to the pipeline
+    # # nlp.create_pipe works for built-ins that are registered with spaCy
+    # if "ner" not in nlp.pipe_names:
+    #     ner = nlp.create_pipe("ner")
+    #     nlp.add_pipe(ner, last=True)
+    # # otherwise, get it so we can add labels
+    # else:
+    #     ner = nlp.get_pipe("ner")
+    #
+    # # add labels
+    # for _, annotations in TRAIN_DATA:
+    #     for ent in annotations.get("entities"):
+    #         ner.add_label(ent[2])
+    #
+    # # get names of other pipes to disable them during training
+    # pipe_exceptions = ["ner", "trf_wordpiecer", "trf_tok2vec"]
+    # other_pipes = [pipe for pipe in nlp.pipe_names if pipe not in pipe_exceptions]
+    # # only train NER
+    # with nlp.disable_pipes(*other_pipes), warnings.catch_warnings():
+    #     # show warnings for misaligned entity spans once
+    #     warnings.filterwarnings("once", category=UserWarning, module='spacy')
+    #
+    #     # reset and initialize the weights randomly – but only if we're
+    #     # training a new model
+    #     if model is None:
+    #         nlp.begin_training()
+    #     for itn in range(n_iter):
+    #         # random.shuffle(TRAIN_DATA)
+    #         losses = {}
+    #         # batch up the examples using spaCy's minibatch
+    #         batches = minibatch(TRAIN_DATA, size=compounding(4.0, 32.0, 1.001))
+    #         for batch in batches:
+    #             texts, annotations = zip(*batch)
+    #             nlp.update(
+    #                 texts,  # batch of texts
+    #                 annotations,  # batch of annotations
+    #                 drop=0.5,  # dropout - make it harder to memorise data
+    #                 losses=losses,
+    #             )
+    #         # print("Losses", losses)
+    #
+    nlp = train_spacy()
 
-def main():
-    # csvFilePath = "avs6a.csv"
-# Function to convert a CSV to JSON
-# Takes the file paths as arguments
-# Decide the two file paths according to your
-# computer system
-    csvFilePath = r'avs6a10.csv'
-    # jsonFilePath = r'Names.json'
+    # test the trained model
+    for text, _ in TRAIN_DATA:
+        print("Text:", text)
+        doc = nlp(text)
+        print("Entities", [(ent.text, ent.label_) for ent in doc.ents])
+        print("Tokens", [(t.text, t.ent_type_, t.ent_iob) for t in doc])
 
-    # Call the make_json function
-    # make_json(csvFilePath, jsonFilePath)
-    # read_json(jsonFilePath)
-    read_csv(csvFilePath)
-main()
+    # save model to output directory
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        if not output_dir.exists():
+            output_dir.mkdir()
+        nlp.to_disk(output_dir)
+        print("Saved model to", output_dir)
+
+        # test the saved model
+        print("Loading from", output_dir)
+        nlp2 = spacy.load(output_dir)
+        for text, _ in TRAIN_DATA:
+            doc = nlp2(text)
+            print("doc.ents:", doc.ents)
+            print("Entities", [(ent.text, ent.label_) for ent in doc.ents])
+            print("Tokens", [(t.text, t.ent_type_, t.ent_iob) for t in doc])
+
+    for i in range(0, 100):
+        test_text = input("Enter your testing text: ")
+        doc = nlp(test_text)
+        for ent in doc.ents:
+            print(ent.text, ent.start_char, ent.end_char, ent.label_)
+
+
+def test():
+    sentence = 'Python programming is fun.'
+    s = list(sentence)
+    sub = 'Python'
+    # result = sentence.index('is fun',)
+    i = sentence.index(sub)
+    k = i
+    for j in range(i, len(sentence)):
+        # print(k, sentence[j])
+        if re.search('[ \n]', sentence[j]):
+            break
+        else:
+            s[k] = '*'
+        k += 1
+    sentence = "".join(s)
+    # j = i + len(sub)-1
+
+    print(i, k, sentence)
+
+    # result = sentence.index('Java')
+    # print("Substring 'Java':", result)
+
+
+if __name__ == "__main__":
+    # plac.call(main)
+    test()
+
