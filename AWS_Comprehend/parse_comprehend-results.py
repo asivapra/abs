@@ -19,6 +19,8 @@ import collections
 from spellchecker import SpellChecker
 
 cer_file = r'avs6b.csv'  # This is the CSV file saved from the AWS Custom Entities Recognition
+doc_file = "avs4a.csv"
+doc_file_masked = "avs4a_masked.csv"
 analysis = 2  # 1 = analyse the results from the AWS Comprehend CER analysis. 2 = My own NLP method
 cer_entities_file = './brand_names.txt'
 spell = SpellChecker()
@@ -312,65 +314,42 @@ def lemmatise(text, nlp):
 
 
 def check_entities(keys, nlp):
-    doc1_ents = []
-    # doc1nlp = nlp('')
-
-    # print(len(keys))
-    keys = keys[0:2]
-    # print(len(keys))
-    n = 0
-    for key in keys:
-        m = []
-        n += 1
-        print(n, key)
-        doc1 = lemmatise(key, nlp)
-        doc_cw = []
-        doc_h = {}
-        ii = []
-        # print(doc1)
-        words = key.split()
-        for w in words:
-            if len(w) < 3:
-                doc_cw.append(w)
-            elif re.search('\d', w):
-                doc_cw.append(w)
-            else:
-                i = key.index(w)
-                cw = spell.correction(w)
-                doc_cw.append(cw)
-                # doc_h[cw] = i
-            # print("W:", spell.candidates(w), cw)
-        # print(doc_cw)
-        doc1 = " ".join(doc_cw)
-        # print(doc1)
-        doc1nlp = nlp(doc1)
-        words = doc1.split()
-        for ent in doc1nlp.ents:
-            # print("ent:", ent.text, ent.label_)
-            if ent.label_ == 'brand':
-                # corrected_word = spell.correction(ent.text)
-                i = doc1.index(ent.text)
-                ii.append(i)
-                m.append(ent.text)  # These are now corrected words
-                doc1_ents.append(ent.text)
-        s = list(doc1)
-        sentence = ''
-        for i in ii:
-            k = i
-            for j in range(i, len(s)):
-                # print(k, sentence[j])
-                if re.search('[ \n]', s[j]):
-                    break
+    with open(doc_file_masked, "w") as mf:
+        line = "Lines with brand names masked out\n"
+        mf.writelines(line)
+        keys = keys[0:10]
+        n = 0
+        for key in keys:
+            n += 1
+            print(n)
+            doc_cw = []
+            ii = []
+            words = key.split()
+            for w in words:
+                if len(w) < 3:
+                    doc_cw.append(w)
+                elif re.search('\d', w):
+                    doc_cw.append(w)
                 else:
-                    s[k] = '*'
-                k += 1
-            sentence = "".join(s)
-        print(sentence)
-
-        # for w in m:
-        #     print(w)
-        #     key = re.sub(w, '*****', key, flags=re.IGNORECASE)
-        # print(n, "|", m, "|", key)
+                    cw = spell.correction(w)
+                    doc_cw.append(cw)
+            doc1 = " ".join(doc_cw)
+            doc1nlp = nlp(doc1)
+            for ent in doc1nlp.ents:
+                if ent.label_ == 'brand':
+                    i = doc1.index(ent.text)
+                    ii.append([i, len(ent.text)])
+            s = list(doc1)
+            for i in ii:
+                k1 = i[0]
+                k2 = i[1]
+                for j in range(k1, k1+k2):
+                    if s[j] == ' ':  # Do not change space to *
+                        continue
+                    s[j] = '*'
+                line = key + "\t" + "".join(s) + "\n"
+            # print(line)
+            mf.writelines(line)
 
 
 def build_entity_ruler(nlp):
@@ -452,6 +431,7 @@ def main():
 
     :return:
     """
+    global doc_file
     if analysis == 1:
         cer_content = read_cer_file()  # This is the cer_file content (cer = Custom Entity Recognition)
         doc_file, masked_doc_file = get_doc_file_names(cer_content)  # This is the file containing the document lines to scan
@@ -464,7 +444,6 @@ def main():
         # cer_content = read_cer_file()  # This is the cer_file content (cer = Custom Entity Recognition)
         # doc_file, masked_doc_file = get_doc_file_names(cer_content)  # This is the file containing the document lines to scan
         nlp = read_dictionary()
-        doc_file = "avs4a.csv"
         keys = create_dict(doc_file)
         j = len(keys)
         print("Total Lines:", j)
