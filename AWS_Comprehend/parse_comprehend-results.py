@@ -15,8 +15,9 @@ import re
 import json
 import spacy
 from spacy.pipeline import EntityRuler
-import collections
 from spellchecker import SpellChecker
+import time
+import multiprocessing as mp
 
 cer_file = r'avs6b.csv'  # This is the CSV file saved from the AWS Custom Entities Recognition
 doc_file = "avs4a.csv"
@@ -313,15 +314,18 @@ def lemmatise(text, nlp):
 #         return 0
 
 
-def check_entities(keys, nlp):
-    with open(doc_file_masked, "w") as mf:
-        line = "Lines with brand names masked out\n"
-        mf.writelines(line)
-        keys = keys[0:10]
-        n = 0
+def star_entities(b, e, keys, nlp, wr):
+    print(f"Worker {wr}: processing {b} to {e} lines.")
+    with open(doc_file_masked, "a") as mf:
+        # line = "Lines with brand names masked out\n"
+        # mf.writelines(line)
+        e = b + 100
+        keys = keys[b:e]
+        n = b
         for key in keys:
             n += 1
-            print(n)
+            if wr == 0:
+                print(f"w:{wr} :{n}")
             doc_cw = []
             ii = []
             words = key.split()
@@ -340,16 +344,76 @@ def check_entities(keys, nlp):
                     i = doc1.index(ent.text)
                     ii.append([i, len(ent.text)])
             s = list(doc1)
+            line = ''
             for i in ii:
                 k1 = i[0]
                 k2 = i[1]
-                for j in range(k1, k1+k2):
+                for j in range(k1+1, k1+k2):
                     if s[j] == ' ':  # Do not change space to *
                         continue
                     s[j] = '*'
                 line = key + "\t" + "".join(s) + "\n"
             # print(line)
             mf.writelines(line)
+    print(f"Worker {wr}: finished.")
+
+
+def par_star_entities(keys, nlp):
+    """
+    Run it in parallel mode. This is to maximise performance
+    :return: None
+    """
+    print("Warning: In Parallel Mode:")
+    print("Writing masked lines in:", doc_file_masked)
+    with open(doc_file_masked, 'w') as f:
+        f.write("Original Lines\tMasked Lines\n")
+    ct0 = time.perf_counter()
+    # nlp = read_dictionary()
+    j = len(keys)
+    print("Total Lines:", j)
+    # keys1.sort()
+    # keys2.sort()
+    num_workers = mp.cpu_count() * 1
+
+    chunk_size = j // num_workers
+    n_chunks = j // chunk_size
+    remainder = j - (chunk_size * num_workers)
+    print("Starting: num_workers, chunk_size, remainder:", num_workers, chunk_size, remainder)
+    workers = []
+    # Each worker gets a subset of the URLs.
+    # e.g. 16 workers and nn URLs:
+    e = r = w = 0  # Declare these to avoid a warning
+    for w in range(n_chunks):
+        b = w * chunk_size
+        e = b + chunk_size
+        workers.append(mp.Process(target=star_entities, args=(b, e, keys, nlp, w)))
+
+    # If the number of items is not an exact multiple of 'num_workers' there will be some leftover.
+    # Start a new worker to handle those.
+    # Below, j == the number of keys1. This is to be split across the workers.
+    # e = total lines allocated across num_workers. If it is not the same as j, there is
+    # some leftover. Start a new worker for it.
+    try:
+        if e:
+            r = j - e
+        if r > 0:  # See if any leftover
+            w += 1
+            workers.append(mp.Process(target=star_entities, args=(e, j, keys, nlp, w)))
+
+    except Exception as e:
+        print(e)
+        pass
+    with open(doc_file_masked, "w") as mf:
+        line = "Lines with brand names masked out\n"
+        mf.writelines(line)
+
+    for w in workers:
+        w.start()
+    # Wait for all processes to finish
+    for w in workers:
+        w.join()
+    et = time.perf_counter() - ct0
+    print("Finished. Time: {:0.2f} sec".format(et))
 
 
 def build_entity_ruler(nlp):
@@ -448,7 +512,8 @@ def main():
         j = len(keys)
         print("Total Lines:", j)
         nlp = build_entity_ruler(nlp)
-        check_entities(keys, nlp)
+        # mask_entities(keys, nlp)
+        par_star_entities(keys, nlp)
 
 
 if __name__ == '__main__':
