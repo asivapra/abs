@@ -7,7 +7,7 @@ GitHub: https://github.com/asivapra/abs/blob/main/AWS_Comprehend/parse_comprehen
 
 Author: Dr. Arapaut V. Sivaprasad
 Created on: 28-12-2020
-Last Modified on: 29-12-2020
+Last Modified on: 01-01-2021
 Copyright (c) 2020 by Arapaut V. Sivaprasad, Australian Bureau of Statistics and WebGenie Software Pty Ltd.
 """
 
@@ -26,6 +26,7 @@ analysis = 2  # 1 = analyse the results from the AWS Comprehend CER analysis. 2 
 cer_entities_file = './brand_names.txt'
 spell = SpellChecker()
 spell.word_frequency.load_text_file(cer_entities_file)
+
 
 def mask_entities(offsets, doc_lines):
     """
@@ -81,8 +82,8 @@ def parse_cer_result(cer_content, doc_lines, masked_doc_file):
     :return: k, j == The numbers of lines actually parsed and the excluded lines
     """
     print(f"Output file: {masked_doc_file}")
-    k = 0   # Number of lines where the entities are masked
-    j = 0   # Number of lines skipped. These include those without an entity and those with > 3 entities.
+    k = 0  # Number of lines where the entities are masked
+    j = 0  # Number of lines skipped. These include those without an entity and those with > 3 entities.
     with open(masked_doc_file, "w") as mf:
         line = "Titles with Masked Entities\n"
         mf.writelines(line)
@@ -161,8 +162,8 @@ def parse_cer_result_0(cer_content, doc_lines, masked_doc_file):
     :return: k, j == The numbers of lines actually parsed and the excluded lines
     """
     print(f"Output file: {masked_doc_file}")
-    k = 0   # Number of lines where the entities are masked
-    j = 0   # Number of lines skipped. These include those without an entity and those with > 3 entities.
+    k = 0  # Number of lines where the entities are masked
+    j = 0  # Number of lines skipped. These include those without an entity and those with > 3 entities.
     with open(masked_doc_file, "w") as mf:
         line = "Titles with Masked Entities\n"
         mf.writelines(line)
@@ -288,38 +289,46 @@ def lemmatise(text, nlp):
             # lt.append(word)  # Add the lemma of the word in an array
             # lt.append(token.lemma_)  # Add the lemma of the word in an array
             lt.append(token.text)  # Add the lemma of the word in an array
-    return " ".join(lt)              # Return it as a full string
-
-
-# def check_brands(d1, d2):
-#     # print(d1, ":", d2)
-#     doc1_ents = []
-#     doc2_ents = []
-#     for ent in d1.ents:
-#         if ent.label_ == 'brand':
-#             doc1_ents.append(ent.text)
-#     for ent in d2.ents:
-#         if ent.label_ == 'brand':
-#             doc2_ents.append(ent.text)
-#     diff_brands = 0
-#     if len(doc1_ents) == 0 or len(doc2_ents) == 0:
-#         return 0
-#     else:
-#         for brand in doc1_ents:
-#             if brand not in doc2_ents:
-#                 diff_brands = 1
-#     if diff_brands:
-#         return diff_brands
-#     else:
-#         return 0
+    return " ".join(lt)  # Return it as a full string
 
 
 def star_entities(b, e, keys, nlp, wr):
-    print(f"Worker {wr}: processing {b} to {e} lines.")
+    """
+    This function replaces the identified brands in each line with *'s.
+    More than one brand in a line can be processed.
+    How?
+        - Each line is split into words
+        - Skip words that are less than 4 letters. Hint: Profanity words are always 4 letters or more.
+            - This means brands like 3M, A2, Aim, etc. will be skipped.
+        - Skip words with a digit in it. This is to skip words like 50mg, 100u, etc.
+            - It too will miss brands like A2, 3M.
+        - Put the words through 'spell.correction'
+            - It will correct spelling in most dictionary words.
+            - Brands are generally not dictionary words, but they will be checked against the 'brand_names' since this
+            file has been added via 'def build_entity_ruler'. It picks up most common misspellings.
+        - Join the words to form a spelling corrected line which replaces the original line.
+        - Create an NLP object, 'docnlp', with the new line.
+        - Iterate through the 'docnlp.ent' objects and pick those which have the label, 'brand'.
+        - Find the index position of this entity in the string, 'doc'.
+        - Add the index and the length of this entity in a 2D array as 'ii = [[i, j]]'
+        - Split the doc line into a list ('s').
+        - Iterate through 's' and mask the words using their start index and length from 'ii'
+        - Join 's' into a line and write it out.
+    :param b: Start of lines to to be processed
+    :param e: End of lines.
+    :param keys: The brands' list as in brand_names.txt
+    :param nlp: The NLP object using model 'en'
+    :param wr: The worker number
+    :return: None
+    """
+    if wr == 0:  # Means that the job is in serial mode.
+        with open(doc_file_masked, "w") as mf:
+            line = "Lines with brand names masked out\n"
+            mf.writelines(line)
+
     with open(doc_file_masked, "a") as mf:
-        # line = "Lines with brand names masked out\n"
-        # mf.writelines(line)
-        e = b + 100
+        e = b + 10  # Debugging. DO NOT DELETE. To limit the # of lines.
+        print(f"Worker {wr}: Processing lines {b} to {e}.")
         keys = keys[b:e]
         n = b
         for key in keys:
@@ -330,32 +339,31 @@ def star_entities(b, e, keys, nlp, wr):
             ii = []
             words = key.split()
             for w in words:
-                if len(w) < 3:
+                if len(w) <= 3:
                     doc_cw.append(w)
                 elif re.search('\d', w):
                     doc_cw.append(w)
                 else:
                     cw = spell.correction(w)
                     doc_cw.append(cw)
-            doc1 = " ".join(doc_cw)
-            doc1nlp = nlp(doc1)
-            for ent in doc1nlp.ents:
+            doc = " ".join(doc_cw)
+            docnlp = nlp(doc)
+            for ent in docnlp.ents:
                 if ent.label_ == 'brand':
-                    i = doc1.index(ent.text)
+                    i = doc.index(ent.text)
                     ii.append([i, len(ent.text)])
-            s = list(doc1)
+            s = list(doc)
             line = ''
             for i in ii:
                 k1 = i[0]
                 k2 = i[1]
-                for j in range(k1+1, k1+k2):
+                for j in range(k1 + 1, k1 + k2):
                     if s[j] == ' ':  # Do not change space to *
                         continue
                     s[j] = '*'
                 line = key + "\t" + "".join(s) + "\n"
-            # print(line)
             mf.writelines(line)
-    print(f"Worker {wr}: finished.")
+    print(f"Worker {wr}: Finished.")
 
 
 def par_star_entities(keys, nlp):
@@ -417,35 +425,44 @@ def par_star_entities(keys, nlp):
 
 
 def build_entity_ruler(nlp):
-    global brands
+    """
+    Add the brand names as custom entities to the NLP object.
+    :param nlp: The NLP object using the model, 'en'
+    :return: nlp = the modified NLP object
+    """
     rulerBrands = EntityRuler(nlp, 'LOWER', overwrite_ents=True)
     with open(cer_entities_file, "r") as f:
         filecontent = f.readlines()
     s1 = {i.strip() for i in filecontent}  # Add to a set to remove duplicates
     brands = [item.strip() for item in s1 if item != '\n']
-    for f in brands:
-        rulerBrands.add_patterns([{"label": "brand", "pattern": f}])
+    for brand_name in brands:
+        rulerBrands.add_patterns([{"label": "brand", "pattern": brand_name}])
     rulerBrands.name = 'rulerBrands'
     nlp.add_pipe(rulerBrands)
     return nlp
 
 
 def create_dict(csvfile):
-    # d0 = collections.OrderedDict()
-    keys = []
+    """
+    Read the input file and return its content in a list.
+    :param csvfile: Input file
+        The csvfile contains the original text lines as:
+            Name
+            Leukopot Snap Spool 1.25cm x 5m
+    :return: keys = list of lines in the input file.
+    """
+    lines = []
     with open(csvfile) as f:
-        for name in f:
-            name = name.strip()
+        for line in f:
+            line = line.strip()
             try:  # There are lines with just the URLs. These will give an error
-                if name == "Name":
+                if line == "Name":
                     continue
-                # name = name.replace("\"", "").replace("'", "")
-                # d0[name] = ''
-                keys.append(name)
+                lines.append(line)
             except ValueError as e:
                 print(e)
                 pass
-    return keys
+    return lines
 
 
 def read_dictionary():
@@ -477,6 +494,7 @@ def main():
     Tested with "BrandsRecognizer" in AWS using 'avs4.csv' as source file.
 
     How it works:
+    - analysis == 1:
         1. The 'BrandsRecognizer' is generated via AWS Comprehend as described in 'AWS Comprehend Custom Entities.docx'
             - Using 'brands.csv' as entities doc and 'avs4.csv' as training doc.
         2. The 'avs4.csv' is the same as 'amcal_products_u.txt'
@@ -491,29 +509,37 @@ def main():
             - Each line is parsed to take the Begin/End offsets of the matching entities.
             - Each doc_line is now parsed to mask the entities using the offset values.
             - write out in 'masked_doc_file'
+
+    - analysis == 2:
+        This does not use the AWS Comprehend output at all. Instead, uses a custom entity file (e.g. brand_names.txt')
+        and the document input file to directly compare and mask the words/phrases.
+
+        This method is devised as an alternative to AWS Comprehend which has a potential problem of not detecting
+        all occurrences of the words/phrases in the doc lines. See the doc comment in 'def star_entities' for details.
+
     See the comments in each function for more details.
 
     :return:
     """
     global doc_file
     if analysis == 1:
+        # Using the output from the AWS Comprehend Custom Enitity Recognition analysis
         cer_content = read_cer_file()  # This is the cer_file content (cer = Custom Entity Recognition)
-        doc_file, masked_doc_file = get_doc_file_names(cer_content)  # This is the file containing the document lines to scan
+        doc_file, masked_doc_file = get_doc_file_names(
+            cer_content)  # This is the file containing the document lines to scan
         doc_lines = read_doc_file(doc_file)
         k, j = parse_cer_result(cer_content, doc_lines, masked_doc_file)
         print(f"Processed: {k} lines with entities masked. Excluding {j} incomplete lines.")
 
     elif analysis == 2:
         # Do a comparison with entity recognition using my own NLP method.
-        # cer_content = read_cer_file()  # This is the cer_file content (cer = Custom Entity Recognition)
-        # doc_file, masked_doc_file = get_doc_file_names(cer_content)  # This is the file containing the document lines to scan
         nlp = read_dictionary()
-        keys = create_dict(doc_file)
+        keys = create_dict(doc_file)  # This is the doc with the original lines.
         j = len(keys)
         print("Total Lines:", j)
         nlp = build_entity_ruler(nlp)
-        # mask_entities(keys, nlp)
-        par_star_entities(keys, nlp)
+        # star_entities(0, len(keys), keys, nlp, 0)   # Run as serial job
+        par_star_entities(keys, nlp)              # Run it as a parallel job.
 
 
 if __name__ == '__main__':
