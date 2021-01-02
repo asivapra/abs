@@ -23,7 +23,8 @@ cer_file = r'avs6b.csv'  # This is the CSV file saved from the AWS Custom Entiti
 doc_file = "avs4a.csv"
 doc_file_masked = "avs4a_masked.csv"
 analysis = 2  # 1 = analyse the results from the AWS Comprehend CER analysis. 2 = My own NLP method
-cer_entities_file = './brand_names.txt'
+limit = 10  # Limit the number of lines to be tested. Make this 0 for no limit.
+cer_entities_file = './brands.txt'
 spell = SpellChecker()
 spell.word_frequency.load_text_file(cer_entities_file)
 
@@ -327,7 +328,8 @@ def star_entities(b, e, keys, nlp, wr):
             mf.writelines(line)
 
     with open(doc_file_masked, "a") as mf:
-        # e = b + 10  # Debugging. DO NOT DELETE. To limit the # of lines.
+        if limit:
+            e = b + limit  # Debugging. DO NOT DELETE. To limit the # of lines.
         print(f"Worker {wr}: Processing lines {b} to {e}.")
         keys = keys[b:e]
         n = b
