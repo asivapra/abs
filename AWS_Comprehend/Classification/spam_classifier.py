@@ -12,23 +12,38 @@ Copyright (c) 2020 by Arapaut V. Sivaprasad, Australian Bureau of Statistics and
 """
 
 import re
-import json
+import RAKE
 import spacy
 from spacy.pipeline import EntityRuler
 from spellchecker import SpellChecker
 import time
 import multiprocessing as mp
- 
-spam_phrases = r'spam_phrases.txt'  # This is the CSV file saved from the AWS Custom Entities Recognition
-doc_file = "spam_lines.txt"
+
+spam_phrases = 'spam_phrases.txt'  # This is the CSV file saved from the AWS Custom Entities Recognition
+spam_lines = "spam_lines.txt"
 doc_file_masked = "spam_lines_masked.txt"
-analysis = 2  # 1 = analyse the results from the AWS Comprehend CER analysis. 2 = My own NLP method
-limit = 0  # Limit the number of lines to be tested. Make this 0 for no limit.
+limit = 5  # Limit the number of lines to be tested. Make this 0 for no limit.
 spell = SpellChecker()
 spell.word_frequency.load_text_file(spam_phrases)
 
+def Sort_Tuple(tup):
+    tup.sort(key = lambda x: x[1])
+    return tup
 
-def star_entities(b, e, d1, nlp, wr):
+
+def get_phrases(s, spc):
+    stop_dir = "stopwords.txt"
+    rake_object = RAKE.Rake(stop_dir)
+    keywords = Sort_Tuple(rake_object.run(s))[-10:]
+    for i in keywords:
+        if i[1] > 4.0:
+            # print(i[0])
+            if i[0] not in spc:
+                with open(spam_phrases, "a") as f:
+                    f.writelines(f"{i[0]}\n")
+
+
+def star_entities(b, e, d1, nlp, spc, wr):
     """
     This function replaces the identified brands in each line with *'s.
     More than one brand in a line can be processed.
@@ -62,59 +77,61 @@ def star_entities(b, e, d1, nlp, wr):
             line = "Lines with brand names masked out\n"
             mf.writelines(line)
 
-    with open(doc_file_masked, "a") as mf:
-        if limit:
-            e = b + limit  # Debugging. DO NOT DELETE. To limit the # of lines.
-        print(f"Worker {wr}: Processing lines {b} to {e}.")
-        keys = list(d1.keys())
-        keys = keys[b:e]
-        n = b
-        for urk in keys:
-            n += 1
-            if wr == 0:
-                print(f"w:{wr} :{n}")
-            doc_cw = []  # Corrected words
-            ii = []
-            text = d1[urk]
-            words = text.split()
-            for w in words:
-                if len(w) <= 3:
-                    doc_cw.append(w)
-                elif re.search('\d', w):
-                    doc_cw.append(w)
-                else:
-                    cw = spell.correction(w)
-                    doc_cw.append(cw)
-            doc = " ".join(doc_cw)
-            docnlp = nlp(doc)
-            words = []
-            # d2 = {}
-            for ent in docnlp.ents:
-                if ent.label_ == 'brand':
-                    i = doc.index(ent.text)
-                    ii.append([i, len(ent.text)])
-                    words.append(ent.text.lower())
-            # d2[urk] = words
-            if len(words):
-                s = list(doc)
-                for i in ii:
-                    k1 = i[0]
-                    k2 = i[1]
-                    for j in range(k1 + 1, k1 + k2):
-                        if s[j] == ' ':  # Do not change space to *
-                            continue
-                        s[j] = '*'
-                doc = "".join(s)
-                my_set = set(words)
-                text = ", ".join(my_set)
-                print(urk, doc)
-                mf.writelines(f"{urk}\tSpam\t{text}\t{doc}\n")
+    if limit:
+        e = b + limit  # Debugging. DO NOT DELETE. To limit the # of lines.
+    print(f"Worker {wr}: Processing lines {b} to {e}.")
+    keys = list(d1.keys())
+    keys = keys[b:e]
+    n = b
+    for urk in keys:
+        n += 1
+        if wr == 0:
+            print(f"w:{wr} :{n}")
+        doc_cw = []  # Corrected words
+        ii = []
+        text = d1[urk]
+        words = text.split()
+        for w in words:
+            if len(w) <= 3:
+                doc_cw.append(w)
+            elif re.search('\d', w):
+                doc_cw.append(w)
             else:
+                cw = spell.correction(w)
+                doc_cw.append(cw)
+        doc = " ".join(doc_cw)
+        docnlp = nlp(doc)
+        words = []
+        # d2 = {}
+        for ent in docnlp.ents:
+            if ent.label_ == 'brand':
+                i = doc.index(ent.text)
+                ii.append([i, len(ent.text)])
+                words.append(ent.text.lower())
+        # d2[urk] = words
+        if len(words):
+            get_phrases(doc, spc)
+            s = list(doc)
+            for i in ii:
+                k1 = i[0]
+                k2 = i[1]
+                for j in range(k1 + 1, k1 + k2):
+                    if s[j] == ' ':  # Do not change space to *
+                        continue
+                    s[j] = '*'
+            doc = "".join(s)
+            my_set = set(words)
+            text = ", ".join(my_set)
+            print(urk, doc)
+            with open(doc_file_masked, "a") as mf:
+                mf.writelines(f"{urk}\tSpam\t{text}\t{doc}\n")
+        else:
+            with open(doc_file_masked, "a") as mf:
                 mf.writelines(f"{urk}\t\t\t{doc}\n")
     print(f"Worker {wr}: Finished.")
 
 
-def par_star_entities(d1, nlp):
+def par_star_entities(d1, nlp, spc):
     """
     Run it in parallel mode. This is to maximise performance
     :return: None
@@ -126,7 +143,7 @@ def par_star_entities(d1, nlp):
     ct0 = time.perf_counter()
     keys = d1.keys()
     j = len(keys)
-    print("Total Lines:", j)
+    print(f"Total Lines: {j}. Limiting {limit} per worker")
     num_workers = mp.cpu_count() * 1
 
     chunk_size = j // num_workers
@@ -140,7 +157,7 @@ def par_star_entities(d1, nlp):
     for w in range(n_chunks):
         b = w * chunk_size
         e = b + chunk_size
-        workers.append(mp.Process(target=star_entities, args=(b, e, d1, nlp, w)))
+        workers.append(mp.Process(target=star_entities, args=(b, e, d1, nlp, spc, w)))
 
     # If the number of items is not an exact multiple of 'num_workers' there will be some leftover.
     # Start a new worker to handle those.
@@ -152,7 +169,7 @@ def par_star_entities(d1, nlp):
             r = j - e
         if r > 0:  # See if any leftover
             w += 1
-            workers.append(mp.Process(target=star_entities, args=(e, j, d1, nlp, w)))
+            workers.append(mp.Process(target=star_entities, args=(e, j, d1, nlp, spc, w)))
 
     except Exception as e:
         print(e)
@@ -179,13 +196,14 @@ def build_entity_ruler(nlp):
     rulerBrands = EntityRuler(nlp, 'LOWER', overwrite_ents=True)
     with open(spam_phrases, "r") as f:
         filecontent = f.readlines()
-    s1 = {i.strip() for i in filecontent}  # Add to a set to remove duplicates
+    spam_phrases_content = [line.strip() for line in filecontent]
+    s1 = {i for i in spam_phrases_content}  # Add to a set to remove duplicates
     brands = [item.strip() for item in s1 if item != '\n']
     for brand_name in brands:
         rulerBrands.add_patterns([{"label": "brand", "pattern": brand_name}])
     rulerBrands.name = 'rulerBrands'
     nlp.add_pipe(rulerBrands)
-    return nlp
+    return nlp, spam_phrases_content
 
 
 def read_spam_file(tsvfile):
@@ -197,22 +215,23 @@ def read_spam_file(tsvfile):
             Leukopot Snap Spool 1.25cm x 5m
     :return: keys = list of lines in the input file.
     """
+    global spam_lines_content
     lines = {}
-    with open(tsvfile) as f:
-        for line in f:
+    with open(tsvfile, "r") as f:
+        spam_lines_content = f.readlines()
+    # with open(tsvfile, "w") as f:
+    for line in spam_lines_content:
+        try:
+            cols = line.strip().split("\t")
+            urk = cols[0]
+            text = cols[1]
+            # f.writelines(f"{line}")  # This will rewrite the input file without the blanks
             try:
-                line = line.strip().split("\t")
-                urk = line[0]
-                text = line[1]
-                try:  # There are lines with just the URLs. These will give an error
-                    if line[0] == "Name":
-                        continue
-                    lines[urk] = text
-                except ValueError as e:
-                    pass
-            except IndexError as e:
+                lines[urk] = text
+            except ValueError:
                 pass
-    # print(lines['98510812438'])
+        except IndexError:
+            pass
     return lines
 
 
@@ -247,11 +266,11 @@ def main():
 
     :return:
     """
-    global doc_file
+    global spam_lines
     lines = []
     # Do a comparison with entity recognition using my own NLP method.
     nlp = read_dictionary()
-    d1 = read_spam_file(doc_file)  # This is the doc with the spam lines.
+    d1 = read_spam_file(spam_lines)  # This is the doc with the spam lines.
     keys = d1.keys()
     j = len(keys)
     print("Total Lines:", j)
@@ -259,8 +278,8 @@ def main():
         text = d1[urk]
         lines.append(text)
         # print(f"URK: {urk} - Line: {text}")
-    nlp = build_entity_ruler(nlp)
-    par_star_entities(d1, nlp)              # Run it as a parallel job.
+    nlp, spc = build_entity_ruler(nlp)
+    par_star_entities(d1, nlp, spc)              # Run it as a parallel job.
 
 
 if __name__ == '__main__':
