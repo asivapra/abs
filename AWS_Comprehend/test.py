@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python 
 #!/usr/bin/env python
 # coding: utf8
 """Example of training spaCy's named entity recognizer, starting off with an
