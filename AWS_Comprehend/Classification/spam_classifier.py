@@ -22,12 +22,13 @@ import multiprocessing as mp
 spam_phrases = 'spam_phrases.txt'  # This is the CSV file saved from the AWS Custom Entities Recognition
 spam_lines = "spam_lines.txt"
 doc_file_masked = "spam_lines_masked.txt"
-limit = 5  # Limit the number of lines to be tested. Make this 0 for no limit.
+limit = 0  # Limit the number of lines to be tested. Make this 0 for no limit.
 spell = SpellChecker()
 spell.word_frequency.load_text_file(spam_phrases)
 
+
 def Sort_Tuple(tup):
-    tup.sort(key = lambda x: x[1])
+    tup.sort(key=lambda x: x[1])
     return tup
 
 
@@ -35,9 +36,9 @@ def get_phrases(s, spc):
     stop_dir = "stopwords.txt"
     rake_object = RAKE.Rake(stop_dir)
     keywords = Sort_Tuple(rake_object.run(s))[-10:]
+    # print(keywords)
     for i in keywords:
-        if i[1] > 4.0:
-            # print(i[0])
+        if i[1] >= 4.0:
             if i[0] not in spc:
                 with open(spam_phrases, "a") as f:
                     f.writelines(f"{i[0]}\n")
@@ -65,9 +66,10 @@ def star_entities(b, e, d1, nlp, spc, wr):
         - Split the doc line into a list ('s').
         - Iterate through 's' and mask the words using their start index and length from 'ii'
         - Join 's' into a line and write it out.
+    :param d1: Dict object as {urk: text}
+    :param spc: The spam phrases in 'spam_phrases.txt'
     :param b: Start of lines to to be processed
     :param e: End of lines.
-    :param keys: The brands' list as in brand_names.txt
     :param nlp: The NLP object using model 'en'
     :param wr: The worker number
     :return: None
@@ -82,11 +84,11 @@ def star_entities(b, e, d1, nlp, spc, wr):
     print(f"Worker {wr}: Processing lines {b} to {e}.")
     keys = list(d1.keys())
     keys = keys[b:e]
-    n = b
+    n = e - b
     for urk in keys:
-        n += 1
-        if wr == 0:
-            print(f"w:{wr} :{n}")
+        n -= 1
+        # if wr == 0:
+        #     print(f"w:{wr} :{n}")
         doc_cw = []  # Corrected words
         ii = []
         text = d1[urk]
@@ -112,13 +114,18 @@ def star_entities(b, e, d1, nlp, spc, wr):
         if len(words):
             get_phrases(doc, spc)
             s = list(doc)
-            for i in ii:
-                k1 = i[0]
-                k2 = i[1]
-                for j in range(k1 + 1, k1 + k2):
-                    if s[j] == ' ':  # Do not change space to *
-                        continue
-                    s[j] = '*'
+            try:
+                for i in ii:
+                    k1 = i[0]
+                    k2 = i[1]
+                    s[k1-1] = ' >>>'
+                    s[k1+k2] = '<<< '
+                    # for j in range(k1 + 1, k1 + k2):
+                    #     if s[j] == ' ':  # Do not change space to *
+                    #         continue
+                    #     s[j] = '*'
+            except IndexError:
+                pass
             doc = "".join(s)
             my_set = set(words)
             text = ", ".join(my_set)
@@ -128,6 +135,8 @@ def star_entities(b, e, d1, nlp, spc, wr):
         else:
             with open(doc_file_masked, "a") as mf:
                 mf.writelines(f"{urk}\t\t\t{doc}\n")
+        # if wr == 0:
+        print(f"Worker_{wr}: {n}")
     print(f"Worker {wr}: Finished.")
 
 
@@ -279,7 +288,7 @@ def main():
         lines.append(text)
         # print(f"URK: {urk} - Line: {text}")
     nlp, spc = build_entity_ruler(nlp)
-    par_star_entities(d1, nlp, spc)              # Run it as a parallel job.
+    par_star_entities(d1, nlp, spc)  # Run it as a parallel job.
 
 
 if __name__ == '__main__':
