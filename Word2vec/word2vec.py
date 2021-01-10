@@ -85,16 +85,17 @@ def Sort_Tuple(tup):
     return tup
 
 
-def read_reviews():
-    with open("reviews_data_2.txt", "r") as f:
+def read_lines():
+    with open("reviews_data_1.txt", "r") as f:
         for i, line in enumerate(f):
-            yield line
+            cols = line.split("\t")
+            yield cols
 
 
 def similar_words(model, rake_object):
     # stop_dir = "../AWS_Comprehend/Classification/stopwords.txt"
     # rake_object = RAKE.Rake(stop_dir)
-    reviews = list(read_reviews())
+    reviews = list(read_lines())
     print(len(reviews))
     for i in range(1):
         s = reviews[i]
@@ -119,48 +120,66 @@ def similar_words(model, rake_object):
 
 
 def most_common_phrases(rake_object, nlp):
-    reviews = list(read_reviews())
-    for i in range(10):
-        translator = str.maketrans(string.punctuation, ' ' * len(string.punctuation))  # map punctuation to space. Works
-        line1 = reviews[i].translate(translator)
-        doc1 = lemmatise(line1, nlp)
-        doc1nlp = nlp(doc1)
-        # print(line)
-        # line = re.sub('[.,<>/?`~!@#$%\^&*+;:\'\"_()=-]', ' ', reviews[i], flags=re.IGNORECASE)  # Works
-        # line = reviews[i].translate(str.maketrans('', '', string.punctuation))  # Remove punctuations with ''. Works
-        # key_phrases = Sort_Tuple(rake_object.run(line))[:]  # returns [(key/phrase, score)...] in ascending score order
-        # substring = ""
-        # try:
-        #     for s in key_phrases[:]:  # Take the highest 10 phrases.
-        #         # print(s)
-        #         substring += s[0] + " "
-        # except Exception as e:
-        #     print(e)
-        #     pass
-        # # print(substring)
-        # substring = ""
-        print(line1)
-        for j in range(10):
-            translator = str.maketrans(string.punctuation, ' ' * len(string.punctuation))
-            line2 = reviews[j].translate(translator)
-            key_phrases = Sort_Tuple(rake_object.run(line2))[:]  # returns [(key/phrase, score)...] in ascending score order
-            substring = ""
-            try:
-                for s in key_phrases[:]:  # Take the highest 10 phrases.
-                    # print(s)
-                    if s[1] > 1.0:
-                        substring += s[0] + " "
-            except Exception as e:
-                print(e)
-                pass
-            doc2 = lemmatise(substring, nlp)
-            doc2nlp = nlp(doc2)
-            cs = round(doc1nlp.similarity(doc2nlp), 2)  # Average time: 1,993 microsec
-            print(i, j, cs, substring)
+    lines = list(read_lines())
+    with open("results.txt", "w") as f:
+        f.writelines(f"CS\tdiff\tdoc1\tdoc2\n")
+        for i in range(1, 31):
+            class1 = lines[i][0]
+            translator = str.maketrans(string.punctuation, ' ' * len(string.punctuation))  # map punctuation to space. Works
+            line1 = lines[i][1].translate(translator).strip()
+            doc1 = lemmatise(line1, nlp)
+            doc1nlp = nlp(doc1)
+            print(i, line1)
+            tot_csh = {}
+            k = 0
+            prev_class = ""
+            tot_cs = 0.00
+            for j in range(1, 31):
+                k += 1
+                class2 = lines[j][0]
+                this_class = class2
+                if not prev_class:
+                    prev_class = this_class
+                translator = str.maketrans(string.punctuation, ' ' * len(string.punctuation))
+                line2 = lines[j][1].translate(translator)
+                key_phrases = Sort_Tuple(rake_object.run(line2))[:]  # returns [(key/phrase, score)...] in ascending score order
+                substring = ""
+                try:
+                    for s in key_phrases[:]:  # Take the highest 10 phrases.
+                        # print(s)
+                        if s[1] > 1.0:
+                            substring += s[0] + " "
+                except Exception as e:
+                    print(e)
+                    pass
+                doc2 = lemmatise(substring, nlp)
+                doc2nlp = nlp(doc2)
+                cs = round(doc1nlp.similarity(doc2nlp), 2)  # Average time: 1,993 microsec
+                # print(i, j, cs, class1, class2)
+                try:
+                    tot_csh[this_class] += cs
+                except:
+                    tot_csh[this_class] = cs
+
+                if prev_class == this_class:
+                    tot_cs += cs
+                else:
+                    prev_class = ""
+                    k = 0
+                    # avg_cs = round(tot_cs / (k-1), 2)
+                    # print(f"avgs_cs:{avg_cs} = {tot_cs} / {k-1}")
+                    # tot_cs = 0.00
+                    # f.writelines(f"Avg:{avg_cs}\t\t\n")
+                f.writelines(f"{cs}\t{0.91-cs}\t{line1}\t{line2}\n")
+            # print(class1, tot_csh)
+            # avg_cs = round(tot_cs / (k - 1), 2)
+            # print(f"avgs_cs:{avg_cs} = {tot_cs} / {k - 1}")
+            # f.writelines(f"Avg:{avg_cs}\t\t\n")
+            # print(i, j, class1, class2, cs, substring)
 
 
 def most_common_words():
-    reviews = list(read_reviews())
+    reviews = list(read_lines())
     words = []
     for i in range(1):
         line = reviews[i].translate(str.maketrans('', '', string.punctuation))  # Remove punctuations
