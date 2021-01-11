@@ -5,6 +5,21 @@ Git: https://github.com/asivapra/abs/tree/main/Word2vec
 Author: Arapaut V. Sivaprasad
 Created: 08/01/2021
 Last Modified: 08/01/2021
+
+Logics to be tried:
+
+    1. Word2Vec Similar words
+        - Build and train the model using a large data set (e.g. hotel reviews 250K lines)
+        - Prepare a set using common words as...
+            - Common words between pairs of texts
+            - Append them together into a set
+            - Manually classify them as good, bad, ugly and neutral
+            - Get up to 100 similar words for each class
+            - Add as class | text. Multiple lines allowed
+            - Get common words between test line and these bag of words (bow)
+            - Get CS score between the common words and the bow
+            - Take the highest CS score and its class
+
 """
 import gzip
 import gensim
@@ -21,7 +36,7 @@ from spellchecker import SpellChecker
 from collections import Counter
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
-spell = SpellChecker()
+spell = SpellChecker(distance=10)
 # nltk.download('punkt')
 # nltk.download('stopwords')
 
@@ -86,7 +101,7 @@ def Sort_Tuple(tup):
 
 
 def read_lines():
-    with open("reviews_data_1.txt", "r") as f:
+    with open("reviews_data_3.txt", "r") as f:
         for i, line in enumerate(f):
             cols = line.split("\t")
             yield cols
@@ -117,6 +132,38 @@ def similar_words(model, rake_object):
                 # print(k)
                 # print(f"*****{e}")
                 pass
+
+
+def common_words(nlp):
+    lines = list(read_lines())
+    with open("results.txt", "w") as f:
+        f.writelines(f"CS\tdiff\tdoc1\tdoc2\n")
+        for i in range(1, 31):
+            class1 = lines[i][0]
+            # print(lines[i])
+            translator = str.maketrans(string.punctuation, ' ' * len(string.punctuation))  # map punctuation to space. Works
+            line1 = lines[i][1].translate(translator).strip()
+            # print(line1)
+            document_1_words = set(line1.split())
+            tokens1_without_sw = [word for word in document_1_words if word not in stopwords.words() and len(word) >= 4]
+            doc1 = " ".join(tokens1_without_sw)
+            doc1 = lemmatise(doc1, nlp)
+            doc1nlp = nlp(doc1)
+            for j in range(i+1, 31):
+                translator = str.maketrans(string.punctuation, ' ' * len(string.punctuation))
+                line2 = lines[j][1].translate(translator)
+                # print(line2)
+                document_2_words = set(line2.split())
+                tokens2_without_sw = [word for word in document_2_words if
+                                      word not in stopwords.words() and len(word) >= 4]
+                common = set(tokens1_without_sw).intersection(set(tokens2_without_sw))
+                doc2 = " ".join(common)
+                doc2 = lemmatise(doc2, nlp)
+                doc2nlp = nlp(doc2)
+                cs = round(doc1nlp.similarity(doc2nlp), 2)  # Average time: 1,993 microsec
+                print(cs, doc2nlp)
+                # break
+            break
 
 
 def most_common_phrases(rake_object, nlp):
@@ -213,9 +260,9 @@ def read_dictionary():
     :return: None
     """
     # model = 'en_core_web_sm'
-    model = 'en_core_web_md'
+    # model = 'en_core_web_md'
     # model = 'en_core_web_lg'
-    # model = 'en'  # Using 'en' instead of 'en_core_web_md', as the latter has many words without vector data. Check!
+    model = 'en'  # Using 'en' instead of 'en_core_web_md', as the latter has many words without vector data. Check!
     print("Starting to read the model:", model)
     # nlp = spacy.cli.download(model)  # Run this for the first time on a new server.
     nlp = spacy.load(model)  # Use this for subsequent runs
@@ -233,7 +280,7 @@ def lemmatise(text, nlp):
         # Remove stopwords (like the, an, of), punctuations and junk (like etc., i.e.)
         # if not token.is_stop and not token.is_punct and not token.pos_ == 'X':
         if not token.is_stop and not token.is_punct:
-            lt.append(token.text)  # Add the lemma of the word in an array
+            lt.append(token.lemma_)  # Add the lemma of the word in an array
     return " ".join(lt)              # Return it as a full string
 
 
@@ -242,13 +289,14 @@ def main():
     # read_train_save_model()  # Comment this out in subsequent runs
     nlp = read_dictionary()
 
-    rake_object = get_rake_object()
+    # rake_object = get_rake_object()
 
-    model = KeyedVectors.load_word2vec_format('hotelreviews_model.bin', binary=True)
+    # model = KeyedVectors.load_word2vec_format('hotelreviews_model.bin', binary=True)
     # lookup(model)
     # similar_words(model, rake_object)
     # most_common_words()
-    most_common_phrases(rake_object, nlp)
+    # most_common_phrases(rake_object, nlp)
+    common_words(nlp)
 
 
 def lookup(model):
